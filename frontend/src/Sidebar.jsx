@@ -14,6 +14,7 @@ export default function Sidebar() {
     { path: "/decline-ranking", label: "Decline Rank", icon: "🏆" },
     { path: "/monthly-recent", label: "Monthly Recent", icon: "📆" },
     { path: "/engagement-trend", label: "Engagement", icon: "✨" },
+    { path: "/summary", label: "Summary", icon: "📌" },
   ];
 
   const toggleSidebar = () => setIsOpen(!isOpen);

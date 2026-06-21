@@ -8,6 +8,7 @@ import TagBreakdown from './TagBreakdown.jsx'
 import DeclineRanking from './DeclineRanking.jsx'
 import MonthlyRecent from './MonthlyRecent.jsx'
 import EngagementTrend from './EngagementTrend.jsx'
+import Summary from './Summary.jsx'
 import Sidebar from './Sidebar.jsx'
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
         <Route path="/decline-ranking" element={<DeclineRanking />} />
         <Route path="/monthly-recent" element={<MonthlyRecent />} />
         <Route path="/engagement-trend" element={<EngagementTrend />} />
+        <Route path="/summary" element={<Summary />} />
       </Routes>
     </>
   )
