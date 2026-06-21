@@ -1,6 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import api from "./api/api.js";
+
+const compact = (value) =>
+  new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
+
+function normalize(row) {
+  return Object.fromEntries(
+    Object.entries(row || {}).map(([key, value]) => {
+      if (key.toLowerCase() === "year") return ["year", Number(value) || 0];
+      if (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value))) return [key, Number(value)];
+      return [key, value];
+    })
+  );
+}
 
 export default function EngagementTrend() {
   const [rows, setRows] = useState([]);
@@ -8,131 +33,126 @@ export default function EngagementTrend() {
   const [error, setError] = useState(null);
   const [selectedYear, setSelectedYear] = useState("");
 
-  const normalizeRow = (row) => Object.fromEntries(
-    Object.entries(row).map(([k, v]) => {
-      if (v === null || v === undefined) return [k, v];
-      if (k.toLowerCase() === "year") return ["year", Number(v) || 0];
-      if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) {
-        return [k, Number(v)];
-      }
-      return [k, v];
-    })
-  );
-
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
       setError(null);
       try {
-        const res = await api.get('/engagement-trend');
-        if (cancelled) return;
-        setRows(res.data || []);
+        const res = await api.get("/engagement-trend");
+        if (!cancelled) setRows(res.data || []);
       } catch (err) {
-        setError(err?.response?.data?.error || err.message || 'Failed to load engagement trend');
+        setError(err?.response?.data?.error || err.message || "Failed to load engagement trend");
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
-    return () => (cancelled = true);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const normalized = useMemo(() => rows.map(normalizeRow), [rows]);
-
-  const years = useMemo(() => {
-    const s = new Set(normalized.map(r => r.year).filter(Boolean));
-    return Array.from(s).sort((a,b)=>a-b);
-  }, [normalized]);
-
-  const selectedRow = useMemo(() => {
-    if (!selectedYear) return null;
-    return normalized.find(r => r.year === Number(selectedYear)) || null;
-  }, [normalized, selectedYear]);
-
-  const chartData = useMemo(() => {
-    if (!selectedRow) return [];
-    const keys = ['avg_score','avg_answer_count','avg_view_count'];
-    return keys.map(k => ({ metric: k, value: selectedRow[k] || 0 }));
-  }, [selectedRow]);
-
-  const tableColumns = useMemo(() => {
-    if (normalized.length === 0) return ['year','avg_score','avg_answer_count','avg_view_count'];
-    const cols = new Set();
-    normalized.forEach(r => Object.keys(r).forEach(k => cols.add(k)));
-    const ordered = Array.from(cols);
-    const rest = ordered.filter(k => k !== 'year').sort();
-    return ['year', ...rest];
-  }, [normalized]);
-
-  const filtered = useMemo(() => {
-    if (!selectedYear) return normalized;
-    return normalized.filter(r => r.year === Number(selectedYear));
-  }, [normalized, selectedYear]);
+  const data = useMemo(
+    () =>
+      rows
+        .map(normalize)
+        .map((row) => ({
+          year: row.year,
+          avg_score: Number(row.avg_score || 0),
+          avg_answer_count: Number(row.avg_answer_count || 0),
+          avg_view_count: Number(row.avg_view_count || 0),
+        }))
+        .sort((a, b) => a.year - b.year),
+    [rows]
+  );
+  const years = data.map((row) => row.year);
+  const activeYear = Number(selectedYear || years[years.length - 1]) || 0;
+  const activeRow = data.find((row) => row.year === activeYear) || {};
+  const metricBars = [
+    { metric: "Score", value: activeRow.avg_score || 0, fill: "#43b6a8" },
+    { metric: "Answers", value: activeRow.avg_answer_count || 0, fill: "#ff8a62" },
+    { metric: "Views / 100", value: (activeRow.avg_view_count || 0) / 100, fill: "#5570d9" },
+  ];
 
   return (
-    <main className="min-h-screen px-4 py-10 bg-slate-50 text-slate-900 lg:ml-64">
-      <section className="mx-auto max-w-6xl rounded-3xl bg-white p-8 shadow-lg shadow-slate-200/80">
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Engagement Trend</h1>
-        <p className="mt-2 text-sm text-slate-600">Average score, answers, and views per year. Filter by a single year.</p>
-
-        <div className="mt-6">
-          <label className="space-y-2 text-sm text-slate-700">
-            <span className="font-medium text-slate-900">Year</span>
-            <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="w-40 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none">
-              <option value="">All years</option>
-              {years.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </label>
+    <main className="min-h-screen bg-[#dfe7ff] px-3 py-5 text-slate-900 sm:px-6 lg:ml-64 lg:px-8">
+      <section className="mx-auto max-w-7xl rounded-[28px] border border-white/70 bg-[#f8f9ff] p-4 shadow-2xl shadow-blue-200/70 sm:p-6">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200/80 pb-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#ff8a62]">Quality Signal</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Engagement Trend</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              Average score, answers, and views show whether questions are still attracting useful attention.
+            </p>
+          </div>
+          <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="rounded-2xl bg-white px-5 py-3 text-sm font-bold shadow-sm outline-none">
+            <option value="">Latest year</option>
+            {years.map((year) => <option key={year} value={year}>{year}</option>)}
+          </select>
         </div>
 
-        {loading && <div className="mt-6">Loading...</div>}
-        {error && <div className="mt-6 text-rose-700">Error: {error}</div>}
-
-        {!loading && !error && selectedRow && (
-          <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-            <h2 className="text-xl font-semibold text-slate-900">Metrics for {selectedYear}</h2>
-            <div className="mt-4 h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="metric" tick={{ fill: '#475569' }} />
-                  <YAxis tick={{ fill: '#475569' }} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#06b6d4" radius={[8,8,8,8]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
+        {loading && <div className="mt-5 rounded-2xl bg-white p-5 text-sm text-slate-500">Loading engagement data...</div>}
+        {error && <div className="mt-5 rounded-2xl bg-rose-50 p-5 text-sm font-semibold text-rose-700">Error: {error}</div>}
 
         {!loading && !error && (
-          <div className="mt-8 overflow-x-auto rounded-3xl border border-slate-200 bg-white p-4">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
-              <thead>
-                <tr>
-                  {tableColumns.map(c => (
-                    <th key={c} className="px-4 py-3 font-semibold uppercase tracking-wide text-slate-500">{c.replace(/_/g, ' ')}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {filtered.length > 0 ? (
-                  filtered.map((r, idx) => (
-                    <tr key={idx}>
-                      {tableColumns.map(c => (
-                        <td key={c} className="px-4 py-3 text-slate-700">{typeof r[c] === 'number' ? r[c].toLocaleString() : r[c]}</td>
-                      ))}
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={tableColumns.length} className="px-4 py-3 text-center text-slate-500">No data available</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <article className="rounded-2xl bg-gradient-to-br from-[#43b6a8] to-[#7ad9cc] p-5 text-white shadow-lg shadow-slate-200">
+                <p className="text-sm font-bold text-white/85">Avg score</p>
+                <div className="mt-5 text-3xl font-semibold">{Number(activeRow.avg_score || 0).toFixed(2)}</div>
+                <p className="mt-1 text-xs font-semibold text-white/80">{activeYear}</p>
+              </article>
+              <article className="rounded-2xl bg-gradient-to-br from-[#ff8a62] to-[#ffb06f] p-5 text-white shadow-lg shadow-slate-200">
+                <p className="text-sm font-bold text-white/85">Avg answers</p>
+                <div className="mt-5 text-3xl font-semibold">{Number(activeRow.avg_answer_count || 0).toFixed(2)}</div>
+                <p className="mt-1 text-xs font-semibold text-white/80">Per question</p>
+              </article>
+              <article className="rounded-2xl bg-gradient-to-br from-[#5570d9] to-[#7892f0] p-5 text-white shadow-lg shadow-slate-200">
+                <p className="text-sm font-bold text-white/85">Avg views</p>
+                <div className="mt-5 text-3xl font-semibold">{compact(activeRow.avg_view_count)}</div>
+                <p className="mt-1 text-xs font-semibold text-white/80">Per question</p>
+              </article>
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+              <section className="rounded-2xl bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-950">Engagement Over Time</h2>
+                <p className="mt-1 text-sm text-slate-500">Score and answer trend by year.</p>
+                <div className="mt-4 h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                      <CartesianGrid stroke="#edf0f7" vertical={false} />
+                      <XAxis dataKey="year" tick={{ fill: "#64748b", fontSize: 12 }} tickLine={false} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} tickLine={false} />
+                      <Tooltip />
+                      <Legend />
+                      <Line dataKey="avg_score" name="Avg score" stroke="#43b6a8" strokeWidth={3} type="monotone" />
+                      <Line dataKey="avg_answer_count" name="Avg answers" stroke="#ff8a62" strokeWidth={3} type="monotone" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+
+              <section className="rounded-2xl bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-950">{activeYear} Metric Snapshot</h2>
+                <p className="mt-1 text-sm text-slate-500">Views are scaled by 100 so all metrics compare visually.</p>
+                <div className="mt-4 h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={metricBars} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                      <CartesianGrid stroke="#edf0f7" vertical={false} />
+                      <XAxis dataKey="metric" tick={{ fill: "#64748b", fontSize: 12 }} tickLine={false} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} tickLine={false} />
+                      <Tooltip />
+                      <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                        {metricBars.map((entry) => <Cell key={entry.metric} fill={entry.fill} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+            </div>
+          </>
         )}
       </section>
     </main>
