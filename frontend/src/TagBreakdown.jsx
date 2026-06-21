@@ -2,24 +2,25 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import api from "./api/api.js";
 
+const fmt = (value) => Number(value || 0).toLocaleString();
+const compact = (value) =>
+  new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
+
+function normalize(row) {
+  return Object.fromEntries(
+    Object.entries(row || {}).map(([key, value]) => {
+      if (key.toLowerCase() === "year") return ["year", Number(value) || 0];
+      if (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value))) return [key, Number(value)];
+      return [key, value];
+    })
+  );
+}
+
 export default function TagBreakdown() {
   const [tagData, setTagData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedYear, setSelectedYear] = useState("");
-
-  const normalizeRow = (row) => {
-    return Object.fromEntries(
-      Object.entries(row).map(([k, v]) => {
-        if (v === null || v === undefined) return [k, v];
-        if (k.toLowerCase() === "year") return ["year", Number(v) || 0];
-        if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) {
-          return [k, Number(v)];
-        }
-        return [k, v];
-      })
-    );
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -28,8 +29,7 @@ export default function TagBreakdown() {
       setError(null);
       try {
         const res = await api.get("/tag-breakdown");
-        if (cancelled) return;
-        setTagData(res.data || []);
+        if (!cancelled) setTagData(res.data || []);
       } catch (err) {
         setError(err?.response?.data?.error || err.message || "Failed to load tag breakdown");
       } finally {
@@ -37,108 +37,106 @@ export default function TagBreakdown() {
       }
     }
     load();
-    return () => (cancelled = true);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const normalizedRows = useMemo(() => tagData.map(normalizeRow), [tagData]);
-
-  const years = useMemo(() => {
-    const ys = new Set(normalizedRows.map((r) => r.year).filter(Boolean));
-    return Array.from(ys).sort((a, b) => a - b);
-  }, [normalizedRows]);
-
-  const filteredData = useMemo(() => {
-    if (!selectedYear) return normalizedRows;
-    return normalizedRows.filter((r) => r.year === Number(selectedYear));
-  }, [normalizedRows, selectedYear]);
-
-  const tableColumns = useMemo(() => {
-    const cols = new Set();
-    filteredData.forEach((r) => Object.keys(r).forEach((k) => cols.add(k)));
-    if (cols.size === 0) return ["year"];
-    const ordered = Array.from(cols);
-    const rest = ordered.filter((k) => k !== "year" && k !== "tag_name").sort();
-    return ["year", "tag_name", ...rest];
-  }, [filteredData]);
-
-  const chartData = useMemo(() => {
-    if (!selectedYear) return [];
-    // show top 10 tags by question_count for selected year
-    const rows = filteredData.slice();
-    rows.sort((a, b) => (b.question_count || 0) - (a.question_count || 0));
-    return rows.slice(0, 10).map((r) => ({ tag: r.tag_name || r.tag || "Unknown", count: r.question_count || 0 }));
-  }, [filteredData, selectedYear]);
+  const normalized = useMemo(() => tagData.map(normalize), [tagData]);
+  const years = useMemo(() => Array.from(new Set(normalized.map((row) => row.year))).filter(Boolean).sort((a, b) => a - b), [normalized]);
+  const activeYear = Number(selectedYear || years[years.length - 1]) || 0;
+  const filtered = normalized.filter((row) => row.year === activeYear);
+  const topTags = filtered
+    .slice()
+    .sort((a, b) => Number(b.question_count || 0) - Number(a.question_count || 0))
+    .slice(0, 10)
+    .map((row) => ({
+      tag: row.tag_name || row.tag || "Unknown",
+      questions: Number(row.question_count || 0),
+      score: Number(row.avg_score || 0),
+    }));
+  const totalQuestions = filtered.reduce((sum, row) => sum + Number(row.question_count || 0), 0);
+  const avgScore =
+    filtered.length > 0 ? filtered.reduce((sum, row) => sum + Number(row.avg_score || 0), 0) / filtered.length : 0;
 
   return (
-    <main className="min-h-screen px-4 py-10 bg-slate-50 text-slate-900 lg:ml-64">
-      <section className="mx-auto max-w-6xl rounded-3xl bg-white p-8 shadow-lg shadow-slate-200/80">
-        <h1 className="text-4xl font-semibold tracking-tight text-slate-900">Tag breakdown</h1>
-        <p className="mt-3 max-w-2xl text-sm text-slate-600">Per-tag metrics (questions, avg score) — filter by year.</p>
-
-        <div className="mt-6">
-          <label className="space-y-2 text-sm text-slate-700">
-            <span className="font-medium text-slate-900">Year</span>
-            <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="w-40 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-slate-500">
-              <option value="">All years</option>
-              {years.map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+    <main className="min-h-screen bg-[#dfe7ff] px-3 py-5 text-slate-900 sm:px-6 lg:ml-64 lg:px-8">
+      <section className="mx-auto max-w-7xl rounded-[28px] border border-white/70 bg-[#f8f9ff] p-4 shadow-2xl shadow-blue-200/70 sm:p-6">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200/80 pb-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#9b7bea]">Question Detail</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Tag Breakdown</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              Ranking of tag demand and average quality signals for the selected year.
+            </p>
+          </div>
+          <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="rounded-2xl bg-white px-5 py-3 text-sm font-bold shadow-sm outline-none">
+            <option value="">Latest year</option>
+            {years.map((year) => <option key={year} value={year}>{year}</option>)}
+          </select>
         </div>
 
-        {loading && <div className="mt-6">Loading...</div>}
-        {error && <div className="mt-6 text-rose-700">Error: {error}</div>}
+        {loading && <div className="mt-5 rounded-2xl bg-white p-5 text-sm text-slate-500">Loading tag data...</div>}
+        {error && <div className="mt-5 rounded-2xl bg-rose-50 p-5 text-sm font-semibold text-rose-700">Error: {error}</div>}
 
-        {!loading && !error && selectedYear && chartData.length > 0 && (
-          <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-            <h2 className="text-xl font-semibold text-slate-900">Top tags by question count ({selectedYear})</h2>
-            <div className="mt-4 h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 20, left: 40, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis type="number" tick={{ fill: "#475569" }} />
-                  <YAxis dataKey="tag" type="category" width={180} tick={{ fill: "#475569" }} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#3b82f6" radius={[10, 10, 10, 10]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
-        {!loading && !error && !selectedYear && (
-          <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-6 text-slate-600">Select a year to view the chart for that year.</div>
-        )}
-
-        {/* Table */}
         {!loading && !error && (
-          <div className="mt-8 overflow-x-auto rounded-3xl border border-slate-200 bg-white p-4">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
-              <thead>
-                <tr>
-                  {tableColumns.map((c) => (
-                    <th key={c} className="px-4 py-3 font-semibold uppercase tracking-wide text-slate-500">{c.replace(/_/g, " ")}</th>
+          <>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <article className="rounded-2xl bg-gradient-to-br from-[#9b7bea] to-[#c4b1ff] p-5 text-white shadow-lg shadow-slate-200">
+                <p className="text-sm font-bold text-white/85">Tags in year</p>
+                <div className="mt-5 text-3xl font-semibold">{filtered.length}</div>
+                <p className="mt-1 text-xs font-semibold text-white/80">{activeYear} records</p>
+              </article>
+              <article className="rounded-2xl bg-gradient-to-br from-[#5570d9] to-[#7892f0] p-5 text-white shadow-lg shadow-slate-200">
+                <p className="text-sm font-bold text-white/85">Question volume</p>
+                <div className="mt-5 text-3xl font-semibold">{compact(totalQuestions)}</div>
+                <p className="mt-1 text-xs font-semibold text-white/80">Across selected tags</p>
+              </article>
+              <article className="rounded-2xl bg-gradient-to-br from-[#ff8a62] to-[#ffb06f] p-5 text-white shadow-lg shadow-slate-200">
+                <p className="text-sm font-bold text-white/85">Average score</p>
+                <div className="mt-5 text-3xl font-semibold">{avgScore.toFixed(2)}</div>
+                <p className="mt-1 text-xs font-semibold text-white/80">Mean tag score signal</p>
+              </article>
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+              <section className="rounded-2xl bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-950">Top Tags by Questions</h2>
+                <p className="mt-1 text-sm text-slate-500">Highest demand tags in {activeYear}.</p>
+                <div className="mt-4 h-[28rem]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topTags} layout="vertical" margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
+                      <CartesianGrid stroke="#edf0f7" horizontal={false} />
+                      <XAxis type="number" tick={{ fill: "#64748b", fontSize: 12 }} tickFormatter={compact} />
+                      <YAxis dataKey="tag" type="category" width={130} tick={{ fill: "#64748b", fontSize: 12 }} />
+                      <Tooltip formatter={(value) => [fmt(value), "Questions"]} />
+                      <Bar dataKey="questions" fill="#9b7bea" radius={[0, 8, 8, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+
+              <section className="rounded-2xl bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-950">Tag Leaderboard</h2>
+                <p className="mt-1 text-sm text-slate-500">Readable ranking with score context.</p>
+                <div className="mt-4 space-y-3">
+                  {topTags.map((row, index) => (
+                    <div key={row.tag} className="rounded-2xl bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">{index + 1}. {row.tag}</p>
+                          <p className="mt-1 text-xs text-slate-500">Avg score {row.score.toFixed(2)}</p>
+                        </div>
+                        <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-[#5570d9] shadow-sm">
+                          {compact(row.questions)}
+                        </span>
+                      </div>
+                    </div>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {filteredData.length > 0 ? (
-                  filteredData.map((r, idx) => (
-                    <tr key={idx}>
-                      {tableColumns.map((c) => (
-                        <td key={c} className="px-4 py-3 text-slate-700">{typeof r[c] === 'number' ? r[c].toLocaleString() : r[c]}</td>
-                      ))}
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={tableColumns.length} className="px-4 py-3 text-center text-slate-500">No data available</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </div>
+              </section>
+            </div>
+          </>
         )}
       </section>
     </main>
