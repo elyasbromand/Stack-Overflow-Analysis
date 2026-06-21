@@ -102,9 +102,9 @@ app.get('/api/decline-ranking', async (req, res) => {
 app.get('/api/monthly-recent', async (req, res) => {
   try {
     const rows = await query(`
-      SELECT Yr AS year, Mo AS month, QuestionCount AS question_count
-      FROM so_staging.stg_monthly_recent
-      ORDER BY Yr, Mo
+      SELECT year, month, question_count
+      FROM fact_monthly_volume
+      ORDER BY year, month
     `);
     res.json(rows);
   } catch (err) {
