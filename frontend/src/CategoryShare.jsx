@@ -3,6 +3,10 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -10,211 +14,134 @@ import {
 } from "recharts";
 import api from "./api/api.js";
 
+const colors = ["#5570d9", "#ff8a62", "#43b6a8", "#9b7bea", "#f6c85f", "#f26d8f"];
+
+function normalize(row) {
+  return Object.fromEntries(
+    Object.entries(row || {}).map(([key, value]) => {
+      if (key.toLowerCase() === "year") return ["year", Number(value) || 0];
+      if (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value))) return [key, Number(value)];
+      return [key, value];
+    })
+  );
+}
+
+function label(key) {
+  return key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export default function CategoryShare() {
-  const [categoryShareData, setCategoryShareData] = useState([]);
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedYear, setSelectedYear] = useState("");
 
-  const getYear = (row) => {
-    if (typeof row.year === "number") return row.year;
-    if (typeof row.Year === "number") return row.Year;
-    if (typeof row.YEAR === "number") return row.YEAR;
-    return Number(row.year || row.Year || row.YEAR) || 0;
-  };
-
-  const normalizeRow = (row) => {
-    return Object.fromEntries(
-      Object.entries(row).map(([key, value]) => {
-        if (key.toLowerCase() === "year") {
-          return ["year", Number(value) || 0];
-        }
-
-        if (typeof value === "string" && value !== "" && !Number.isNaN(Number(value))) {
-          return [key, Number(value)];
-        }
-
-        return [key, value];
-      })
-    );
-  };
-
   useEffect(() => {
-    async function loadData() {
+    let cancelled = false;
+    async function load() {
       setLoading(true);
       setError(null);
-
       try {
-        const response = await api.get("/category-share");
-        setCategoryShareData(response.data || []);
+        const res = await api.get("/category-share");
+        if (!cancelled) setRows(res.data || []);
       } catch (err) {
-        setError(err?.response?.data?.error || err.message || "Failed to load data");
+        setError(err?.response?.data?.error || err.message || "Failed to load category share");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-
-    loadData();
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const normalizedRows = useMemo(
-    () => categoryShareData.map(normalizeRow),
-    [categoryShareData]
-  );
-
-  const years = useMemo(() => {
-    const yearSet = new Set(normalizedRows.map((row) => row.year).filter(Boolean));
-    return Array.from(yearSet).sort((a, b) => a - b);
-  }, [normalizedRows]);
-
-  const filteredData = useMemo(() => {
-    if (!selectedYear) return normalizedRows;
-    return normalizedRows.filter((row) => row.year === Number(selectedYear));
-  }, [normalizedRows, selectedYear]);
-
-  const tableColumns = useMemo(() => {
-    const columns = new Set();
-    filteredData.forEach((row) => Object.keys(row).forEach((key) => columns.add(key)));
-    if (columns.size === 0) return ["year"];
-    const ordered = Array.from(columns);
-    const rest = ordered.filter((key) => key !== "year").sort();
-    return ["year", ...rest];
-  }, [filteredData]);
-
-  const chartData = useMemo(() => {
-    if (!selectedYear || filteredData.length === 0) return [];
-    const row = filteredData[0];
-    return Object.entries(row)
-      .filter(([key]) => key.toLowerCase() !== "year")
-      .map(([key, value]) => ({
-        metric: key,
-        value: typeof value === "number" ? value : Number(value) || 0,
-      }));
-  }, [filteredData, selectedYear]);
+  const data = useMemo(() => rows.map(normalize).sort((a, b) => a.year - b.year), [rows]);
+  const years = data.map((row) => row.year).filter(Boolean);
+  const activeYear = Number(selectedYear || years[years.length - 1]) || 0;
+  const activeRow = data.find((row) => row.year === activeYear) || {};
+  const shareKeys = Object.keys(activeRow).filter((key) => key !== "year" && Number.isFinite(Number(activeRow[key])));
+  const pieData = shareKeys.map((key) => ({ name: label(key), value: Number(activeRow[key] || 0) }));
+  const movementData = shareKeys.map((key) => {
+    const first = data[0] || {};
+    return { metric: label(key), change: Number(activeRow[key] || 0) - Number(first[key] || 0) };
+  });
+  const leader = pieData.slice().sort((a, b) => b.value - a.value)[0];
 
   return (
-    <main className="min-h-screen px-4 py-10 bg-slate-50 text-slate-900 lg:ml-64">
-      <section className="mx-auto max-w-6xl rounded-3xl bg-white p-8 shadow-lg shadow-slate-200/80">
-        <h1 className="text-4xl font-semibold tracking-tight text-slate-900">
-          Category Share Over Time
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm text-slate-600">
-          Track the percentage share of questions across categories over the years.
-        </p>
-
-        {/* Summary cards */}
-        <div className="mt-8 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <div className="font-medium text-slate-900">Total records</div>
-            <div className="mt-1 text-2xl font-semibold">{categoryShareData.length}</div>
+    <main className="min-h-screen bg-[#dfe7ff] px-3 py-5 text-slate-900 sm:px-6 lg:ml-64 lg:px-8">
+      <section className="mx-auto max-w-7xl rounded-[28px] border border-white/70 bg-[#f8f9ff] p-4 shadow-2xl shadow-blue-200/70 sm:p-6">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200/80 pb-5">
+          <div>
+            <p className="text-xs font-normal uppercase tracking-[0.25em] text-[#5570d9]">Trend Analysis</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Category Share</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              Percentage composition view for understanding how topic share changes over time.
+            </p>
           </div>
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <div className="font-medium text-slate-900">Filtered records</div>
-            <div className="mt-1 text-2xl font-semibold">{filteredData.length}</div>
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <div className="font-medium text-slate-900">Years covered</div>
-            <div className="mt-1 text-2xl font-semibold">{years.length}</div>
-          </div>
+          <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="rounded-2xl bg-white px-5 py-3 text-sm font-bold shadow-sm outline-none">
+            <option value="">Latest year</option>
+            {years.map((year) => <option key={year} value={year}>{year}</option>)}
+          </select>
         </div>
 
-        {/* Filters */}
-        <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-6">
-            <label className="space-y-2 text-sm text-slate-700">
-            <span className="font-medium text-slate-900">Year</span>
-            <select
-              value={selectedYear}
-              onChange={(event) => setSelectedYear(event.target.value)}
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-slate-500"
-            >
-              <option value="">All years</option>
-              {years.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        {loading && <div className="mt-5 rounded-2xl bg-white p-5 text-sm text-slate-500">Loading category share...</div>}
+        {error && <div className="mt-5 rounded-2xl bg-rose-50 p-5 text-sm font-semibold text-rose-700">Error: {error}</div>}
 
-        {/* Loading and error states */}
-        {loading && (
-          <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 px-6 py-5 text-slate-700">
-            Loading category share data...
-          </div>
-        )}
-
-        {error && (
-          <div className="mt-8 rounded-2xl border border-rose-200 bg-rose-50 px-6 py-5 text-rose-700">
-            Error: {error}
-          </div>
-        )}
-
-        {/* Chart */}
-        {!loading && !error && selectedYear && chartData.length > 0 && (
-          <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-            <h2 className="text-xl font-semibold text-slate-900">
-              {`Year ${selectedYear} raw row breakdown`}
-            </h2>
-            <div className="mt-4 h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis
-                    dataKey="metric"
-                    tick={{ fill: "#475569", angle: -45, textAnchor: "end", height: 80 }}
-                  />
-                  <YAxis tick={{ fill: "#475569" }} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#8b5cf6" radius={[10, 10, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
-        {!loading && !error && !selectedYear && (
-          <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-6 text-slate-600">
-            Select a year to view the raw row breakdown chart.
-          </div>
-        )}
-
-        {/* Table */}
         {!loading && !error && (
-          <div className="mt-8 overflow-x-auto rounded-3xl border border-slate-200 bg-white p-4">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
-              <thead>
-                <tr>
-                  {tableColumns.map((column) => (
-                    <th key={column} className="px-4 py-3 font-semibold uppercase tracking-wide text-slate-500">
-                      {column.replace(/_/g, " ")}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {filteredData.length > 0 ? (
-                  filteredData.map((row, idx) => (
-                    <tr key={idx}>
-                      {tableColumns.map((column) => (
-                        <td key={column} className="px-4 py-3 text-slate-700">
-                          {typeof row[column] === "number"
-                            ? row[column].toLocaleString()
-                            : row[column]}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={tableColumns.length} className="px-4 py-3 text-center text-slate-500">
-                      No data available
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <article className="rounded-2xl bg-gradient-to-br from-[#5570d9] to-[#7892f0] p-5 text-white shadow-lg shadow-slate-200">
+                <p className="text-sm font-bold text-white/85">Selected year</p>
+                <div className="mt-5 text-3xl font-semibold">{activeYear || "N/A"}</div>
+                <p className="mt-1 text-xs font-semibold text-white/80">Share snapshot</p>
+              </article>
+              <article className="rounded-2xl bg-gradient-to-br from-[#ff8a62] to-[#ffb06f] p-5 text-white shadow-lg shadow-slate-200">
+                <p className="text-sm font-bold text-white/85">Leading share</p>
+                <div className="mt-5 text-3xl font-semibold">{leader ? `${leader.value.toFixed(1)}%` : "N/A"}</div>
+                <p className="mt-1 text-xs font-semibold text-white/80">{leader?.name || "No metric"}</p>
+              </article>
+              <article className="rounded-2xl bg-gradient-to-br from-[#43b6a8] to-[#7ad9cc] p-5 text-white shadow-lg shadow-slate-200">
+                <p className="text-sm font-bold text-white/85">Metrics tracked</p>
+                <div className="mt-5 text-3xl font-semibold">{shareKeys.length}</div>
+                <p className="mt-1 text-xs font-semibold text-white/80">Numeric share fields</p>
+              </article>
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+              <section className="rounded-2xl bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-950">{activeYear} Share Mix</h2>
+                <p className="mt-1 text-sm text-slate-500">Donut chart from the selected API row.</p>
+                <div className="mt-4 h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieData} dataKey="value" innerRadius="55%" outerRadius="82%" paddingAngle={3}>
+                        {pieData.map((entry, index) => <Cell key={entry.name} fill={colors[index % colors.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={(value) => [`${Number(value).toFixed(2)}%`, "Share"]} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+
+              <section className="rounded-2xl bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-950">Change From First Year</h2>
+                <p className="mt-1 text-sm text-slate-500">Positive and negative share movement in percentage points.</p>
+                <div className="mt-4 h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={movementData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                      <CartesianGrid stroke="#edf0f7" vertical={false} />
+                      <XAxis dataKey="metric" tick={{ fill: "#64748b", fontSize: 11 }} tickLine={false} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} tickFormatter={(value) => `${value}%`} />
+                      <Tooltip formatter={(value) => [`${Number(value).toFixed(2)} pts`, "Change"]} />
+                      <Legend />
+                      <Bar dataKey="change" name="Share point change" fill="#5570d9" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+            </div>
+          </>
         )}
       </section>
     </main>
