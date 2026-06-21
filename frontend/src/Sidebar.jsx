@@ -13,6 +13,7 @@ export default function Sidebar() {
     { path: "/tag-breakdown", label: "By Tag", icon: "🏷️" },
     { path: "/decline-ranking", label: "Decline Rank", icon: "🏆" },
     { path: "/monthly-recent", label: "Monthly Recent", icon: "📆" },
+    { path: "/engagement-trend", label: "Engagement", icon: "✨" },
   ];
 
   const toggleSidebar = () => setIsOpen(!isOpen);

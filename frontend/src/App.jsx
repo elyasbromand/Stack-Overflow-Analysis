@@ -7,6 +7,7 @@ import CategoryShare from './CategoryShare.jsx'
 import TagBreakdown from './TagBreakdown.jsx'
 import DeclineRanking from './DeclineRanking.jsx'
 import MonthlyRecent from './MonthlyRecent.jsx'
+import EngagementTrend from './EngagementTrend.jsx'
 import Sidebar from './Sidebar.jsx'
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
         <Route path="/tag-breakdown" element={<TagBreakdown />} />
         <Route path="/decline-ranking" element={<DeclineRanking />} />
         <Route path="/monthly-recent" element={<MonthlyRecent />} />
+        <Route path="/engagement-trend" element={<EngagementTrend />} />
       </Routes>
     </>
   )
